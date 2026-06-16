@@ -36,10 +36,11 @@ jobs:
           cp -f service.sh module_template/
           cp -f read_log.sh module_template/
           cp -f config.conf module_template/
-          cp -f out/lib/arm64-v8a/libiampad.so module_template/zygisk/zygisk-iampad.so
-          cp -f out/lib/armeabi-v7a/libiampad.so module_template/zygisk/zygisk-iampad.so.arm
-          cp -f out/lib/x86/libiampad.so module_template/zygisk/zygisk-iampad.so.x86
-          cp -f out/lib/x86_64/libiampad.so module_template/zygisk/zygisk-iampad.so.x86_64
+          # ZygiskNext naming: <abi>.so (NOT zygisk-<id>.so)
+          cp -f out/lib/arm64-v8a/libiampad.so module_template/zygisk/arm64-v8a.so
+          cp -f out/lib/armeabi-v7a/libiampad.so module_template/zygisk/armeabi-v7a.so
+          cp -f out/lib/x86/libiampad.so module_template/zygisk/x86.so
+          cp -f out/lib/x86_64/libiampad.so module_template/zygisk/x86_64.so
           cd module_template
           zip -r9 ../IAmPad-Zygisk.zip .
 
