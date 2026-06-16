@@ -33,6 +33,8 @@ jobs:
           mkdir -p module_template/zygisk
           cp -f module.prop module_template/
           cp -f customize.sh module_template/
+          cp -f service.sh module_template/
+          cp -f read_log.sh module_template/
           cp -f config.conf module_template/
           cp -f out/lib/arm64-v8a/libiampad.so module_template/zygisk/zygisk-iampad.so
           cp -f out/lib/armeabi-v7a/libiampad.so module_template/zygisk/zygisk-iampad.so.arm
