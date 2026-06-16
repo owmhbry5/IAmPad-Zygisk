@@ -1,9 +1,9 @@
 /*
- * IAmPad-Zygisk v8
- * Added: hardware/board/locale/mod_device/cpu-abilist/serial and more
+ * IAmPad-Zygisk v9
+ * Added: system_ext/odm marketname; hardware/board/locale/mod_device/cpu-abilist/serial
  *        matching the property set observed in 平板模块1.1
  * Fixed: hook SystemProperties.native_get (used by many ROMs/WeChat builds)
- * Based on analysis of working QQ-伪装小米平板模式, 平板模块1.1 and Houvven/I-Am-Pad
+ * Based on analysis of QQ-伪装小米平板模式, 平板模块1.1, Houvven/I-Am-Pad and device_faker
  */
 
 #include <cstdlib>
@@ -136,8 +136,10 @@ static void build_prop_map() {
     // Market name
     g_prop_map.push_back({"ro.product.marketname", g_marketname});
     g_prop_map.push_back({"ro.product.system.marketname", g_marketname});
+    g_prop_map.push_back({"ro.product.system_ext.marketname", g_marketname});
     g_prop_map.push_back({"ro.product.vendor.marketname", g_marketname});
     g_prop_map.push_back({"ro.product.product.marketname", g_marketname});
+    g_prop_map.push_back({"ro.product.odm.marketname", g_marketname});
 
     // Characteristics (tablet)
     g_prop_map.push_back({"ro.build.characteristics", g_characteristics});
@@ -358,7 +360,7 @@ public:
         this->env = env;
         FILE* fp = fopen(LOG_PATH, "w");
         if (fp) fclose(fp);
-        LOGI("IAmPad v8 onLoad pid=%d", getpid());
+        LOGI("IAmPad v9 onLoad pid=%d", getpid());
     }
 
     void preAppSpecialize(AppSpecializeArgs* args) override {
