@@ -1,0 +1,43 @@
+name: Build IAmPad-Zygisk
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: sdkmanager "ndk;26.3.11579264"
+
+      - name: Build module
+        run: |
+          export ANDROID_HOME=$HOME/android-sdk
+          ./build.sh "$ANDROID_HOME/ndk/26.3.11579264"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IAmPad-Zygisk
+          path: IAmPad-Zygisk.zip
+
+      - name: Upload release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: IAmPad-Zygisk.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
