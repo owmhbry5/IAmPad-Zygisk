@@ -11,3 +11,4 @@ local.properties
 /out
 IAmPad-Zygisk.zip
 *.zip
+artifact/
