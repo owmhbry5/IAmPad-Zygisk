@@ -1,21 +1,7 @@
-#!/system/bin/sh
-# IAmPad-Zygisk installation script
+SKIPUNZIP=0
 
-ui_print "============================================"
-ui_print "  IAmPad-Zygisk - Open Source Tablet Module"
-ui_print "============================================"
-ui_print ""
-ui_print "Target: WeChat, QQ, TIM, DingTalk"
-ui_print ""
-
-# Make scripts executable
-chmod 755 "$MODDIR/service.sh"
-chmod 755 "$MODDIR/read_log.sh"
-
-ui_print "After reboot, check logs with:"
-ui_print "  sh /data/adb/modules/iampad/read_log.sh"
-ui_print ""
-ui_print "Or in Termux:"
-ui_print "  cat /data/adb/modules/iampad/iampad.log"
-ui_print ""
-ui_print "Reboot to activate."
+ui_print "📱 正在安装 IAmPad - Pure Local..."
+ui_print "---------------------------------------"
+ui_print "✅ 安装完成，重启生效！"
+ui_print "⚠️ 请确保已启用 Zygisk 功能！"
+ui_print "---------------------------------------"
