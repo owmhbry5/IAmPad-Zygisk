@@ -1,63 +1,43 @@
 #!/usr/bin/env bash
 set -e
 
-# Build script for IAmPad-Zygisk
-# Usage: ./build.sh [NDK_PATH]
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -z "$1" ]; then
-    if [ -n "$ANDROID_HOME" ]; then
-        NDK_ROOT="$(find "$ANDROID_HOME/ndk" -maxdepth 1 -type d | sort | tail -n 1)"
-    fi
-else
-    NDK_ROOT="$1"
+    echo "Usage: ./build.sh <NDK_PATH>"
+    echo "Example: ./build.sh \$ANDROID_HOME/ndk/26.3.11579264"
+    exit 1
 fi
 
-if [ -z "$NDK_ROOT" ] || [ ! -d "$NDK_ROOT" ]; then
-    echo "Error: Android NDK not found."
-    echo "Please set ANDROID_HOME or pass NDK path as argument."
+NDK_ROOT="$1"
+
+if [ ! -d "$NDK_ROOT" ]; then
+    echo "Error: NDK directory not found: $NDK_ROOT"
+    exit 1
+fi
+
+NDK_BUILD="$NDK_ROOT/ndk-build"
+if [ ! -f "$NDK_BUILD" ]; then
+    echo "Error: ndk-build not found at: $NDK_BUILD"
     exit 1
 fi
 
 echo "Using NDK: $NDK_ROOT"
+echo "ndk-build: $NDK_BUILD"
 
-# Build with ndk-build
-"$NDK_ROOT/ndk-build" -C "$SCRIPT_DIR/module/jni" \
-    NDK_PROJECT_PATH="$SCRIPT_DIR/module" \
-    APP_BUILD_SCRIPT="$SCRIPT_DIR/module/jni/Android.mk" \
-    NDK_APPLICATION_MK="$SCRIPT_DIR/module/jni/Application.mk" \
-    clean
+JNI_DIR="$SCRIPT_DIR/module/jni"
 
-"$NDK_ROOT/ndk-build" -C "$SCRIPT_DIR/module/jni" \
-    NDK_PROJECT_PATH="$SCRIPT_DIR/module" \
-    APP_BUILD_SCRIPT="$SCRIPT_DIR/module/jni/Android.mk" \
-    NDK_APPLICATION_MK="$SCRIPT_DIR/module/jni/Application.mk"
+# Clean
+"$NDK_BUILD" -C "$JNI_DIR" clean 2>/dev/null || true
 
-# Package module
-OUTPUT_DIR="$SCRIPT_DIR/out"
-rm -rf "$OUTPUT_DIR"
-mkdir -p "$OUTPUT_DIR/zygisk"
+# Build all ABIs
+"$NDK_BUILD" -C "$JNI_DIR" \
+    NDK_PROJECT_PATH="$SCRIPT_DIR" \
+    APP_BUILD_SCRIPT="$JNI_DIR/Android.mk" \
+    NDK_APPLICATION_MK="$JNI_DIR/Application.mk" \
+    NDK_LIBS_OUT="$SCRIPT_DIR/out/lib" \
+    NDK_OUT="$SCRIPT_DIR/out/obj"
 
-cp "$SCRIPT_DIR/module.prop" "$OUTPUT_DIR/"
-cp "$SCRIPT_DIR/customize.sh" "$OUTPUT_DIR/"
-cp "$SCRIPT_DIR/config.conf" "$OUTPUT_DIR/"
-
-# Magisk Zygisk naming convention:
-# arm64-v8a  -> zygisk-<id>.so
-# armeabi-v7a -> zygisk-<id>.so.arm
-# x86        -> zygisk-<id>.so.x86
-# x86_64     -> zygisk-<id>.so.x86_64
-
-MODULE_ID="iampad"
-SO_NAME="zygisk-${MODULE_ID}.so"
-
-cp "$SCRIPT_DIR/module/libs/arm64-v8a/libiampad.so"   "$OUTPUT_DIR/zygisk/$SO_NAME"
-cp "$SCRIPT_DIR/module/libs/armeabi-v7a/libiampad.so" "$OUTPUT_DIR/zygisk/${SO_NAME}.arm"
-cp "$SCRIPT_DIR/module/libs/x86/libiampad.so"         "$OUTPUT_DIR/zygisk/${SO_NAME}.x86"
-cp "$SCRIPT_DIR/module/libs/x86_64/libiampad.so"      "$OUTPUT_DIR/zygisk/${SO_NAME}.x86_64"
-
-cd "$OUTPUT_DIR"
-zip -r9 "$SCRIPT_DIR/IAmPad-Zygisk.zip" .
-
-echo "Built: $SCRIPT_DIR/IAmPad-Zygisk.zip"
+echo ""
+echo "Build complete! Libraries:"
+find "$SCRIPT_DIR/out/lib" -name "*.so" 2>/dev/null || echo "No .so files found"
