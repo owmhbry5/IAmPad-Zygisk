@@ -1,8 +1,9 @@
 /*
- * IAmPad-Zygisk v7
+ * IAmPad-Zygisk v8
+ * Added: hardware/board/locale/mod_device/cpu-abilist/serial and more
+ *        matching the property set observed in 平板模块1.1
  * Fixed: hook SystemProperties.native_get (used by many ROMs/WeChat builds)
- * Fixed: add ro.vendor.build.characteristics and ro.product.characteristics
- * Based on analysis of working QQ-伪装小米平板模式 and 平板模块1.1
+ * Based on analysis of working QQ-伪装小米平板模式, 平板模块1.1 and Houvven/I-Am-Pad
  */
 
 #include <cstdlib>
@@ -60,6 +61,17 @@ static char g_device[PROP_VALUE_MAX]       = "pipa";
 static char g_product[PROP_VALUE_MAX]      = "pipa";
 static char g_marketname[PROP_VALUE_MAX]   = "Xiaomi Pad 6 Pro";
 static char g_characteristics[PROP_VALUE_MAX] = "tablet";
+static char g_board[PROP_VALUE_MAX]        = "pipa";
+static char g_hardware[PROP_VALUE_MAX]     = "qcom";
+static char g_locale[PROP_VALUE_MAX]       = "zh-CN";
+static char g_mod_device[PROP_VALUE_MAX]   = "pipa";
+static char g_build_product[PROP_VALUE_MAX] = "pipa";
+static char g_cpu_abilist[PROP_VALUE_MAX]   = "arm64-v8a,armeabi-v7a,armeabi";
+static char g_cpu_abilist32[PROP_VALUE_MAX] = "armeabi-v7a,armeabi";
+static char g_cpu_abilist64[PROP_VALUE_MAX] = "arm64-v8a";
+static char g_serialno[PROP_VALUE_MAX]     = "unknown";
+static char g_boot_serialno[PROP_VALUE_MAX] = "unknown";
+static char g_arch[PROP_VALUE_MAX]         = "arm64";
 
 static std::vector<std::string> g_targets;
 static const char* DEFAULT_TARGETS[] = {
@@ -132,6 +144,21 @@ static void build_prop_map() {
     g_prop_map.push_back({"ro.system.build.characteristics", g_characteristics});
     g_prop_map.push_back({"ro.vendor.build.characteristics", g_characteristics});
     g_prop_map.push_back({"ro.product.characteristics", g_characteristics});
+
+    // Hardware / board / product / locale / mod_device / cpu abilist / serial
+    g_prop_map.push_back({"ro.hardware", g_hardware});
+    g_prop_map.push_back({"ro.build.product", g_build_product});
+    g_prop_map.push_back({"ro.product.mod_device", g_mod_device});
+    g_prop_map.push_back({"ro.product.locale", g_locale});
+    g_prop_map.push_back({"ro.product.cpu.abilist", g_cpu_abilist});
+    g_prop_map.push_back({"ro.product.cpu.abilist32", g_cpu_abilist32});
+    g_prop_map.push_back({"ro.product.cpu.abilist64", g_cpu_abilist64});
+    g_prop_map.push_back({"ro.system.product.cpu.abilist", g_cpu_abilist});
+    g_prop_map.push_back({"ro.system.product.cpu.abilist32", g_cpu_abilist32});
+    g_prop_map.push_back({"ro.system.product.cpu.abilist64", g_cpu_abilist64});
+    g_prop_map.push_back({"ro.serialno", g_serialno});
+    g_prop_map.push_back({"ro.boot.serialno", g_boot_serialno});
+    g_prop_map.push_back({"ro.arch", g_arch});
 }
 
 // ---------------------------------------------------------------------------
@@ -312,8 +339,10 @@ static void spoof_build(JNIEnv* env) {
     set_field(env, cls, "MODEL", g_model);
     set_field(env, cls, "DEVICE", g_device);
     set_field(env, cls, "PRODUCT", g_product);
+    set_field(env, cls, "BOARD", g_board);
+    set_field(env, cls, "HARDWARE", g_hardware);
     char fp_str[256];
-    snprintf(fp_str, sizeof(fp_str), "%s/%s/%s:user/release-keys", g_brand, g_product, g_model);
+    snprintf(fp_str, sizeof(fp_str), "%s/%s/%s:user/release-keys", g_brand, g_product, g_device);
     set_field(env, cls, "FINGERPRINT", fp_str);
     env->DeleteLocalRef(cls);
 }
@@ -329,7 +358,7 @@ public:
         this->env = env;
         FILE* fp = fopen(LOG_PATH, "w");
         if (fp) fclose(fp);
-        LOGI("IAmPad v7 onLoad pid=%d", getpid());
+        LOGI("IAmPad v8 onLoad pid=%d", getpid());
     }
 
     void preAppSpecialize(AppSpecializeArgs* args) override {

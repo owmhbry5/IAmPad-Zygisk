@@ -1,7 +1,7 @@
 id=iampad
 name=IAmPad - Pure Local
-version=7
-versionCode=7
+version=8
+versionCode=8
 author=OpenSource
 description=Open source tablet mode for WeChat - Pure local, no network
 action=Show Module Info
