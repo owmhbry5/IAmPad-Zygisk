@@ -1,8 +1,8 @@
 /*
- * IAmPad-Zygisk v5
- * Fixed: SO naming for ZygiskNext (arm64-v8a.so)
- * Fixed: spoof ALL partition properties (system/vendor/product/odm/system_ext)
- * Based on analysis of working QQ-小米平板模式 module
+ * IAmPad-Zygisk v7
+ * Fixed: hook SystemProperties.native_get (used by many ROMs/WeChat builds)
+ * Fixed: add ro.vendor.build.characteristics and ro.product.characteristics
+ * Based on analysis of working QQ-伪装小米平板模式 and 平板模块1.1
  */
 
 #include <cstdlib>
@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <android/log.h>
 #include <sys/system_properties.h>
+#include <jni.h>
 
 #include "zygisk.hpp"
 
@@ -129,6 +130,8 @@ static void build_prop_map() {
     // Characteristics (tablet)
     g_prop_map.push_back({"ro.build.characteristics", g_characteristics});
     g_prop_map.push_back({"ro.system.build.characteristics", g_characteristics});
+    g_prop_map.push_back({"ro.vendor.build.characteristics", g_characteristics});
+    g_prop_map.push_back({"ro.product.characteristics", g_characteristics});
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +156,60 @@ int iampad_system_property_get(const char* name, char* value) {
     }
     value[0] = '\0';
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Java SystemProperties.native_get hook
+// Some ROMs/wechat builds read props through android.os.SystemProperties
+// instead of going through libc's __system_property_get directly.
+// ---------------------------------------------------------------------------
+
+static const char* lookup_prop_value(const char* name) {
+    if (!name) return nullptr;
+    for (const auto& pm : g_prop_map) {
+        if (strcmp(name, pm.name) == 0) return pm.value;
+    }
+    return nullptr;
+}
+
+static jstring iampad_native_get(JNIEnv* env, jclass /*cls*/, jstring keyJ, jstring defJ) {
+    if (!keyJ) return defJ;
+    const char* key = env->GetStringUTFChars(keyJ, nullptr);
+    if (!key) return defJ;
+    const char* val = lookup_prop_value(key);
+    jstring ret;
+    if (val) {
+        ret = env->NewStringUTF(val);
+    } else {
+        char buf[PROP_VALUE_MAX];
+        if (__system_property_get(key, buf) > 0) {
+            ret = env->NewStringUTF(buf);
+        } else {
+            ret = defJ;
+        }
+    }
+    env->ReleaseStringUTFChars(keyJ, key);
+    return ret;
+}
+
+static void hook_system_properties_jni(JNIEnv* env) {
+    jclass cls = env->FindClass("android/os/SystemProperties");
+    if (!cls) {
+        env->ExceptionClear();
+        LOGE("SystemProperties class not found");
+        return;
+    }
+    static JNINativeMethod methods[] = {
+        {"native_get", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+         (void*)iampad_native_get}
+    };
+    if (env->RegisterNatives(cls, methods, 1) != 0) {
+        env->ExceptionClear();
+        LOGE("RegisterNatives(native_get) failed");
+    } else {
+        LOGI("SystemProperties.native_get hooked");
+    }
+    env->DeleteLocalRef(cls);
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +313,7 @@ static void spoof_build(JNIEnv* env) {
     set_field(env, cls, "DEVICE", g_device);
     set_field(env, cls, "PRODUCT", g_product);
     char fp_str[256];
-    snprintf(fp_str, sizeof(fp_str), "%s/%s/%s:user/test-keys", g_brand, g_product, g_model);
+    snprintf(fp_str, sizeof(fp_str), "%s/%s/%s:user/release-keys", g_brand, g_product, g_model);
     set_field(env, cls, "FINGERPRINT", fp_str);
     env->DeleteLocalRef(cls);
 }
@@ -272,7 +329,7 @@ public:
         this->env = env;
         FILE* fp = fopen(LOG_PATH, "w");
         if (fp) fclose(fp);
-        LOGI("IAmPad v5 onLoad pid=%d", getpid());
+        LOGI("IAmPad v7 onLoad pid=%d", getpid());
     }
 
     void preAppSpecialize(AppSpecializeArgs* args) override {
@@ -310,6 +367,7 @@ public:
             LOGE("libc.so not found");
         }
         spoof_build(env);
+        hook_system_properties_jni(env);
         LOGI("done for %s", process);
     }
 
