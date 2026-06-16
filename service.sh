@@ -1,36 +1,49 @@
 #!/system/bin/sh
-# IAmPad-Zygisk service script - runs on boot
-# Creates log directory and writes initial diagnostics
+# IAmPad-Zygisk service.sh
 
 MODDIR=${0%/*}
-LOGFILE="$MODDIR/iampad.log"
+LOGFILE="/data/local/tmp/iampad.log"
 
-# Clear old log
 echo "" > "$LOGFILE"
-echo "============================================" >> "$LOGFILE"
-echo "IAmPad-Zygisk service.sh - $(date)" >> "$LOGFILE"
-echo "============================================" >> "$LOGFILE"
+echo "==========================================" >> "$LOGFILE"
+echo "IAmPad service.sh - $(date)" >> "$LOGFILE"
+echo "==========================================" >> "$LOGFILE"
 
-# Check if Zygisk is available
-if [ -d "/data/adb/modules/zygisksu" ] || [ -d "/data/adb/modules/zygisk_assistant" ]; then
-    echo "[OK] ZygiskNext found" >> "$LOGFILE"
+# Check ZygiskNext
+if [ -d "/data/adb/modules/zygisksu" ]; then
+    echo "[OK] ZygiskNext (zygisksu) found" >> "$LOGFILE"
+elif [ -d "/data/adb/modules/zygisk_assistant" ]; then
+    echo "[OK] ZygiskNext (zygisk_assistant) found" >> "$LOGFILE"
 else
-    echo "[WARN] ZygiskNext NOT found! Zygisk modules will not work!" >> "$LOGFILE"
-    echo "[WARN] Install from: https://github.com/Dr-TSNG/ZygiskNext/releases" >> "$LOGFILE"
+    echo "[FAIL] ZygiskNext NOT found!" >> "$LOGFILE"
+    echo "Install: https://github.com/Dr-TSNG/ZygiskNext/releases" >> "$LOGFILE"
 fi
 
-# Check module files
+# Check if module is disabled
+if [ -f "$MODDIR/disable" ]; then
+    echo "[FAIL] Module is DISABLED!" >> "$LOGFILE"
+fi
+
+# Check .so files
 echo "" >> "$LOGFILE"
-echo "Module files:" >> "$LOGFILE"
-ls -la "$MODDIR/" >> "$LOGFILE" 2>&1
-echo "" >> "$LOGFILE"
-echo "Zygisk SO files:" >> "$LOGFILE"
+echo "SO files:" >> "$LOGFILE"
 ls -la "$MODDIR/zygisk/" >> "$LOGFILE" 2>&1
 
-# Check config
+# Check Zygisk marker
 echo "" >> "$LOGFILE"
-echo "Config:" >> "$LOGFILE"
-cat "$MODDIR/config.conf" >> "$LOGFILE" 2>&1
+echo "Checking native module marker..." >> "$LOGFILE"
+sleep 10  # Wait for module to potentially load
+if [ -f "/data/local/tmp/iampad_loaded.marker" ]; then
+    echo "[OK] Native module marker found!" >> "$LOGFILE"
+    cat "/data/local/tmp/iampad_loaded.marker" >> "$LOGFILE"
+else
+    echo "[FAIL] Native module marker NOT found" >> "$LOGFILE"
+    echo "This means the .so file was never loaded by ZygiskNext" >> "$LOGFILE"
+    echo "Possible causes:" >> "$LOGFILE"
+    echo "  1. ZygiskNext not configured to load modules" >> "$LOGFILE"
+    echo "  2. Module disabled in KernelSU" >> "$LOGFILE"
+    echo "  3. Zygisk API version mismatch" >> "$LOGFILE"
+fi
 
 echo "" >> "$LOGFILE"
-echo "service.sh done. Waiting for module logs..." >> "$LOGFILE"
+echo "service.sh done." >> "$LOGFILE"
