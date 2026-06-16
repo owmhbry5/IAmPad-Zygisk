@@ -255,8 +255,9 @@ static void spoof_build(JNIEnv* env) {
     set_field(env, cls, "MODEL", g_model);
     set_field(env, cls, "DEVICE", g_device);
     set_field(env, cls, "PRODUCT", g_product);
-    set_field(env, cls, "FINGERPRINT",
-              std::string(g_brand) + "/" + g_product + "/" + g_model + ":user/test-keys");
+    char fp_str[256];
+    snprintf(fp_str, sizeof(fp_str), "%s/%s/%s:user/test-keys", g_brand, g_product, g_model);
+    set_field(env, cls, "FINGERPRINT", fp_str);
     env->DeleteLocalRef(cls);
 }
 
