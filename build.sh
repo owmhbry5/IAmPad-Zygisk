@@ -41,3 +41,22 @@ JNI_DIR="$SCRIPT_DIR/module/jni"
 echo ""
 echo "Build complete! Libraries:"
 find "$SCRIPT_DIR/out/lib" -name "*.so" 2>/dev/null || echo "No .so files found"
+
+PKG_DIR="$SCRIPT_DIR/out/module"
+ZIP_PATH="$SCRIPT_DIR/IAmPad-Zygisk.zip"
+
+rm -rf "$PKG_DIR"
+mkdir -p "$PKG_DIR/zygisk"
+cp -f "$SCRIPT_DIR/module.prop" "$PKG_DIR/"
+cp -f "$SCRIPT_DIR/customize.sh" "$PKG_DIR/"
+cp -f "$SCRIPT_DIR/config.conf" "$PKG_DIR/"
+cp -f "$SCRIPT_DIR/out/lib/arm64-v8a/libiampad.so" "$PKG_DIR/zygisk/arm64-v8a.so"
+cp -f "$SCRIPT_DIR/out/lib/armeabi-v7a/libiampad.so" "$PKG_DIR/zygisk/armeabi-v7a.so"
+
+(
+    cd "$PKG_DIR"
+    zip -r9 "$ZIP_PATH" .
+)
+
+echo ""
+echo "Package complete: $ZIP_PATH"

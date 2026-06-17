@@ -1,5 +1,5 @@
 /*
- * IAmPad-Zygisk v9
+ * IAmPad-Zygisk v10
  * Added: system_ext/odm marketname; hardware/board/locale/mod_device/cpu-abilist/serial
  *        matching the property set observed in 平板模块1.1
  * Fixed: hook SystemProperties.native_get (used by many ROMs/WeChat builds)
@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <cstdarg>
 #include <ctime>
 #include <cerrno>
 #include <string>
@@ -74,10 +75,7 @@ static char g_boot_serialno[PROP_VALUE_MAX] = "unknown";
 static char g_arch[PROP_VALUE_MAX]         = "arm64";
 
 static std::vector<std::string> g_targets;
-static const char* DEFAULT_TARGETS[] = {
-    "com.tencent.mm", "com.tencent.mobileqq",
-    "com.tencent.tim", "com.alibaba.android.rimet", nullptr
-};
+static bool g_targets_configured = false;
 
 // ---------------------------------------------------------------------------
 // ALL properties to spoof (from reference module analysis)
@@ -201,22 +199,34 @@ static const char* lookup_prop_value(const char* name) {
     return nullptr;
 }
 
-static jstring iampad_native_get(JNIEnv* env, jclass /*cls*/, jstring keyJ, jstring defJ) {
+static jstring read_prop_or_default(JNIEnv* env, const char* key, jstring defJ) {
+    const char* val = lookup_prop_value(key);
+    if (val) {
+        return env->NewStringUTF(val);
+    }
+
+    char buf[PROP_VALUE_MAX];
+    if (__system_property_get(key, buf) > 0) {
+        return env->NewStringUTF(buf);
+    }
+
+    return defJ ? defJ : env->NewStringUTF("");
+}
+
+static jstring iampad_native_get(JNIEnv* env, jclass /*cls*/, jstring keyJ) {
+    if (!keyJ) return env->NewStringUTF("");
+    const char* key = env->GetStringUTFChars(keyJ, nullptr);
+    if (!key) return env->NewStringUTF("");
+    jstring ret = read_prop_or_default(env, key, nullptr);
+    env->ReleaseStringUTFChars(keyJ, key);
+    return ret;
+}
+
+static jstring iampad_native_get_def(JNIEnv* env, jclass /*cls*/, jstring keyJ, jstring defJ) {
     if (!keyJ) return defJ;
     const char* key = env->GetStringUTFChars(keyJ, nullptr);
     if (!key) return defJ;
-    const char* val = lookup_prop_value(key);
-    jstring ret;
-    if (val) {
-        ret = env->NewStringUTF(val);
-    } else {
-        char buf[PROP_VALUE_MAX];
-        if (__system_property_get(key, buf) > 0) {
-            ret = env->NewStringUTF(buf);
-        } else {
-            ret = defJ;
-        }
-    }
+    jstring ret = read_prop_or_default(env, key, defJ);
     env->ReleaseStringUTFChars(keyJ, key);
     return ret;
 }
@@ -229,10 +239,12 @@ static void hook_system_properties_jni(JNIEnv* env) {
         return;
     }
     static JNINativeMethod methods[] = {
+        {"native_get", "(Ljava/lang/String;)Ljava/lang/String;",
+         (void*)iampad_native_get},
         {"native_get", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-         (void*)iampad_native_get}
+         (void*)iampad_native_get_def}
     };
-    if (env->RegisterNatives(cls, methods, 1) != 0) {
+    if (env->RegisterNatives(cls, methods, 2) != 0) {
         env->ExceptionClear();
         LOGE("RegisterNatives(native_get) failed");
     } else {
@@ -288,6 +300,12 @@ static void trim(char* s) {
     while (len > 0 && (s[len-1] == ' ' || s[len-1] == '\t' || s[len-1] == '\r' || s[len-1] == '\n')) s[--len] = '\0';
 }
 
+static void copy_prop(char* dst, const char* src) {
+    if (!dst || !src) return;
+    strncpy(dst, src, PROP_VALUE_MAX - 1);
+    dst[PROP_VALUE_MAX - 1] = '\0';
+}
+
 static void load_config(const char* module_dir) {
     char path[512];
     snprintf(path, sizeof(path), "%s/config.conf", module_dir);
@@ -303,14 +321,26 @@ static void load_config(const char* module_dir) {
         *eq = '\0';
         char* key = line; char* val = eq + 1;
         trim(key); trim(val);
-        if (strcmp(key, "manufacturer") == 0)         strncpy(g_manufacturer, val, PROP_VALUE_MAX-1);
-        else if (strcmp(key, "brand") == 0)            strncpy(g_brand, val, PROP_VALUE_MAX-1);
-        else if (strcmp(key, "model") == 0)            strncpy(g_model, val, PROP_VALUE_MAX-1);
-        else if (strcmp(key, "device") == 0)           strncpy(g_device, val, PROP_VALUE_MAX-1);
-        else if (strcmp(key, "product") == 0)          strncpy(g_product, val, PROP_VALUE_MAX-1);
-        else if (strcmp(key, "marketname") == 0)       strncpy(g_marketname, val, PROP_VALUE_MAX-1);
-        else if (strcmp(key, "characteristics") == 0)  strncpy(g_characteristics, val, PROP_VALUE_MAX-1);
+        if (strcmp(key, "manufacturer") == 0)         copy_prop(g_manufacturer, val);
+        else if (strcmp(key, "brand") == 0)            copy_prop(g_brand, val);
+        else if (strcmp(key, "model") == 0)            copy_prop(g_model, val);
+        else if (strcmp(key, "device") == 0)           copy_prop(g_device, val);
+        else if (strcmp(key, "product") == 0)          copy_prop(g_product, val);
+        else if (strcmp(key, "marketname") == 0)       copy_prop(g_marketname, val);
+        else if (strcmp(key, "characteristics") == 0)  copy_prop(g_characteristics, val);
+        else if (strcmp(key, "board") == 0)            copy_prop(g_board, val);
+        else if (strcmp(key, "hardware") == 0)         copy_prop(g_hardware, val);
+        else if (strcmp(key, "locale") == 0)           copy_prop(g_locale, val);
+        else if (strcmp(key, "mod_device") == 0)       copy_prop(g_mod_device, val);
+        else if (strcmp(key, "build_product") == 0)    copy_prop(g_build_product, val);
+        else if (strcmp(key, "cpu_abilist") == 0)      copy_prop(g_cpu_abilist, val);
+        else if (strcmp(key, "cpu_abilist32") == 0)    copy_prop(g_cpu_abilist32, val);
+        else if (strcmp(key, "cpu_abilist64") == 0)    copy_prop(g_cpu_abilist64, val);
+        else if (strcmp(key, "serialno") == 0)         copy_prop(g_serialno, val);
+        else if (strcmp(key, "boot_serialno") == 0)    copy_prop(g_boot_serialno, val);
+        else if (strcmp(key, "arch") == 0)             copy_prop(g_arch, val);
         else if (strcmp(key, "targets") == 0) {
+            g_targets_configured = true;
             g_targets.clear();
             char buf[512]; strncpy(buf, val, sizeof(buf)-1); buf[sizeof(buf)-1] = '\0';
             char* tok = strtok(buf, ",");
@@ -360,26 +390,38 @@ public:
         this->env = env;
         FILE* fp = fopen(LOG_PATH, "w");
         if (fp) fclose(fp);
-        LOGI("IAmPad v9 onLoad pid=%d", getpid());
+        LOGI("IAmPad v10 onLoad pid=%d", getpid());
     }
 
     void preAppSpecialize(AppSpecializeArgs* args) override {
-        const char* process = env->GetStringUTFChars(args->nice_name, nullptr);
-        if (!process) return;
-        bool target = is_target(process);
-        env->ReleaseStringUTFChars(args->nice_name, process);
-        if (!target) {
+        if (!args || !args->nice_name) {
             api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
             return;
         }
-        LOGI("TARGET: %s uid=%d", process, args->uid);
+        const char* process = env->GetStringUTFChars(args->nice_name, nullptr);
+        if (!process) {
+            api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
+            return;
+        }
+        std::string process_name(process);
+        env->ReleaseStringUTFChars(args->nice_name, process);
+
         int fd = api->getModuleDir();
         if (fd >= 0) {
             char dir[256];
             snprintf(dir, sizeof(dir), "/proc/self/fd/%d", fd);
             load_config(dir);
             close(fd);
+        } else {
+            LOGE("getModuleDir failed");
         }
+
+        bool target = is_target(process_name.c_str());
+        if (!target) {
+            api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
+            return;
+        }
+        LOGI("TARGET: %s uid=%d", process_name.c_str(), args->uid);
         build_prop_map();
         LOGI("spoofing %zu properties", g_prop_map.size());
         dev_t dev; ino_t inode;
@@ -399,7 +441,7 @@ public:
         }
         spoof_build(env);
         hook_system_properties_jni(env);
-        LOGI("done for %s", process);
+        LOGI("done for %s", process_name.c_str());
     }
 
 private:
@@ -407,9 +449,14 @@ private:
     JNIEnv* env = nullptr;
     bool is_target(const char* process) {
         if (!process) return false;
-        const auto& t = g_targets.empty() ? defaults() : g_targets;
-        for (const auto& pkg : t)
-            if (strncmp(process, pkg.c_str(), pkg.length()) == 0) return true;
+        const auto& t = g_targets_configured ? g_targets : defaults();
+        for (const auto& pkg : t) {
+            size_t len = pkg.length();
+            if (strncmp(process, pkg.c_str(), len) == 0 &&
+                (process[len] == '\0' || process[len] == ':')) {
+                return true;
+            }
+        }
         return false;
     }
     static const std::vector<std::string>& defaults() {

@@ -41,19 +41,31 @@
 
 ## 配置说明
 
-默认配置位于 `/data/adb/modules/iampad/config.conf`：
+默认配置会随模块安装到 `/data/adb/modules/iampad/config.conf`：
 
 ```conf
 manufacturer=Xiaomi
 brand=Xiaomi
 model=23046RP50C
-device=23046RP50C
-product=23046RP50C
+device=pipa
+product=pipa
+marketname=Xiaomi Pad 6 Pro
 characteristics=tablet
+board=pipa
+hardware=qcom
+locale=zh-CN
+mod_device=pipa
+build_product=pipa
+cpu_abilist=arm64-v8a,armeabi-v7a,armeabi
+cpu_abilist32=armeabi-v7a,armeabi
+cpu_abilist64=arm64-v8a
+serialno=unknown
+boot_serialno=unknown
+arch=arm64
 targets=com.tencent.mm,com.tencent.mobileqq,com.tencent.tim,com.alibaba.android.rimet
 ```
 
-修改后重启目标应用生效。
+`targets` 只匹配完整包名或该包名下的子进程（例如 `com.tencent.mm:tools`）。修改后重启目标应用生效。
 
 ## 编译
 
@@ -75,3 +87,7 @@ export ANDROID_HOME=$HOME/Library/Android/sdk
 ## 免责声明
 
 本模块仅供学习和研究使用。使用可能导致账号封禁、数据丢失等风险，请在备用机/小号上测试。
+
+## License
+
+MIT
