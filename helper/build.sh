@@ -73,12 +73,19 @@ CP="classes_pine:classes_dexkit:classes_flatbuffers:classes_kotlin:$ANDROID_JAR"
 javac -source 8 -target 8 -cp "$CP" -d classes_helper \
     "$SCRIPT_DIR/src/main/java/com/iampad/helper/"*.java
 
+# D8 (from r8) expects jar/zip program inputs, not raw class directories.
+jar -cf classes_helper.jar -C classes_helper .
+jar -cf classes_pine.jar -C classes_pine .
+jar -cf classes_dexkit.jar -C classes_dexkit .
+jar -cf classes_flatbuffers.jar -C classes_flatbuffers .
+jar -cf classes_kotlin.jar -C classes_kotlin .
+
 java -cp "r8lib.jar" com.android.tools.r8.D8 \
     --release \
     --min-api 24 \
     --lib "$ANDROID_JAR" \
     --output "$BUILD_DIR/helper.dex.zip" \
-    classes_helper classes_pine classes_dexkit classes_flatbuffers classes_kotlin
+    classes_helper.jar classes_pine.jar classes_dexkit.jar classes_flatbuffers.jar classes_kotlin.jar
 
 unzip -q -o "$BUILD_DIR/helper.dex.zip" -d "$OUT_DIR"
 mv "$OUT_DIR/classes.dex" "$OUT_DIR/helper.dex"
