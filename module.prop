@@ -1,7 +1,7 @@
 id=iampad
 name=IAmPad - Pure Local
-version=11
-versionCode=11
+version=12
+versionCode=12
 author=OpenSource
-description=Open source tablet mode for WeChat - Pure local, no network
-action=重启微信并清理缓存
+description=Open source tablet mode for WeChat/QQ/TIM/DingTalk with Java-level hooks - Pure local, no network
+action=Show Module Info

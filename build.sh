@@ -42,6 +42,12 @@ echo ""
 echo "Build complete! Libraries:"
 find "$SCRIPT_DIR/out/lib" -name "*.so" 2>/dev/null || echo "No .so files found"
 
+# Build Java helper (Pine + DexKit)
+echo ""
+echo "Building Java helper..."
+chmod +x "$SCRIPT_DIR/helper/build.sh"
+"$SCRIPT_DIR/helper/build.sh"
+
 PKG_DIR="$SCRIPT_DIR/out/module"
 ZIP_PATH="$SCRIPT_DIR/IAmPad-Zygisk.zip"
 
@@ -53,6 +59,7 @@ cp -f "$SCRIPT_DIR/action.sh" "$PKG_DIR/"
 cp -f "$SCRIPT_DIR/config.conf" "$PKG_DIR/"
 cp -f "$SCRIPT_DIR/out/lib/arm64-v8a/libiampad.so" "$PKG_DIR/zygisk/arm64-v8a.so"
 cp -f "$SCRIPT_DIR/out/lib/armeabi-v7a/libiampad.so" "$PKG_DIR/zygisk/armeabi-v7a.so"
+cp -rf "$SCRIPT_DIR/module/helper" "$PKG_DIR/helper"
 
 (
     cd "$PKG_DIR"

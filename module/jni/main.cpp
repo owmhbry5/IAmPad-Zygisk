@@ -1,9 +1,11 @@
 /*
- * IAmPad-Zygisk v11
- * Added: system_ext/odm marketname; hardware/board/locale/mod_device/cpu-abilist/serial
- *        matching the property set observed in 平板模块1.1
- * Fixed: hook SystemProperties.native_get (used by many ROMs/WeChat builds)
- * Based on analysis of QQ-伪装小米平板模式, 平板模块1.1, Houvven/I-Am-Pad and device_faker
+ * IAmPad-Zygisk v12
+ * Added: Java helper (Pine + DexKit) to hook WeChat/QQ/DingTalk app-level tablet checks
+ *        - WeChat: isFoldableDevice, checkLoginAsPad
+ *        - QQ/TIM: Build model reset + cache clear
+ *        - DingTalk: isMultiLoginFoldableDevice
+ * Previous: v11 config.conf + system-level property spoofing
+ * Pure local, no network
  */
 
 #include <cstdlib>
@@ -481,6 +483,98 @@ static void spoof_build(JNIEnv* env) {
 }
 
 // ---------------------------------------------------------------------------
+// Java helper loader (Pine + DexKit for app-level method hooking)
+// ---------------------------------------------------------------------------
+
+#if defined(__aarch64__)
+#define IAMPAD_ABI "arm64-v8a"
+#elif defined(__arm__)
+#define IAMPAD_ABI "armeabi-v7a"
+#elif defined(__i386__)
+#define IAMPAD_ABI "x86"
+#elif defined(__x86_64__)
+#define IAMPAD_ABI "x86_64"
+#else
+#define IAMPAD_ABI "arm64-v8a"
+#endif
+
+static void clear_jni_exception(JNIEnv* env) {
+    if (env->ExceptionCheck()) env->ExceptionClear();
+}
+
+static void load_helper(JNIEnv* env, const char* package_name, const char* module_dir) {
+    char dex_path[512];
+    char opt_dir[512];
+    char lib_dir[512];
+    snprintf(dex_path, sizeof(dex_path), "%s/helper/helper.dex", module_dir);
+    snprintf(opt_dir, sizeof(opt_dir), "%s/helper/opt", module_dir);
+    snprintf(lib_dir, sizeof(lib_dir), "%s/helper/libs/%s", module_dir, IAMPAD_ABI);
+
+    LOGI("loading helper dex=%s lib=%s", dex_path, lib_dir);
+
+    jclass dexClz = env->FindClass("dalvik/system/DexClassLoader");
+    if (!dexClz) { clear_jni_exception(env); LOGE("DexClassLoader not found"); return; }
+
+    jmethodID dexInit = env->GetMethodID(dexClz, "<init>",
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)V");
+    if (!dexInit) { clear_jni_exception(env); LOGE("DexClassLoader.<init> not found"); return; }
+
+    jclass classClz = env->FindClass("java/lang/Class");
+    jmethodID getSysLoader = env->GetStaticMethodID(classClz, "getSystemClassLoader",
+            "()Ljava/lang/ClassLoader;");
+    jobject sysLoader = env->CallStaticObjectMethod(classClz, getSysLoader);
+    if (!sysLoader) { clear_jni_exception(env); LOGE("system classloader null"); return; }
+
+    jstring dexPathJ = env->NewStringUTF(dex_path);
+    jstring optDirJ = env->NewStringUTF(opt_dir);
+    jstring libDirJ = env->NewStringUTF(lib_dir);
+
+    jobject dexLoader = env->NewObject(dexClz, dexInit, dexPathJ, optDirJ, libDirJ, sysLoader);
+    env->DeleteLocalRef(dexPathJ);
+    env->DeleteLocalRef(optDirJ);
+    env->DeleteLocalRef(libDirJ);
+    env->DeleteLocalRef(sysLoader);
+    if (!dexLoader || env->ExceptionCheck()) {
+        clear_jni_exception(env);
+        LOGE("DexClassLoader creation failed");
+        return;
+    }
+
+    jmethodID loadClass = env->GetMethodID(dexClz, "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;");
+    jstring helperName = env->NewStringUTF("com.iampad.helper.IAmPadHelper");
+    jobject helperClzObj = env->CallObjectMethod(dexLoader, loadClass, helperName);
+    env->DeleteLocalRef(helperName);
+    env->DeleteLocalRef(dexLoader);
+    if (!helperClzObj || env->ExceptionCheck()) {
+        clear_jni_exception(env);
+        LOGE("failed to load IAmPadHelper class");
+        return;
+    }
+    jclass helperClz = (jclass) helperClzObj;
+
+    jmethodID initMid = env->GetStaticMethodID(helperClz, "init", "(Ljava/lang/String;Ljava/lang/String;)V");
+    if (!initMid) {
+        clear_jni_exception(env);
+        LOGE("IAmPadHelper.init not found");
+        env->DeleteLocalRef(helperClz);
+        return;
+    }
+    jstring pkgJ = env->NewStringUTF(package_name);
+    jstring pathJ = env->NewStringUTF(module_dir);
+    env->CallStaticVoidMethod(helperClz, initMid, pkgJ, pathJ);
+    env->DeleteLocalRef(pkgJ);
+    env->DeleteLocalRef(pathJ);
+    env->DeleteLocalRef(helperClz);
+    if (env->ExceptionCheck()) {
+        clear_jni_exception(env);
+        LOGE("IAmPadHelper.init threw");
+        return;
+    }
+    LOGI("helper loaded for %s", package_name);
+}
+
+// ---------------------------------------------------------------------------
 // Zygisk module
 // ---------------------------------------------------------------------------
 
@@ -491,7 +585,7 @@ public:
         this->env = env;
         FILE* fp = fopen(LOG_PATH, "w");
         if (fp) fclose(fp);
-        LOGI("IAmPad v11 onLoad pid=%d", getpid());
+        LOGI("IAmPad v12 onLoad pid=%d", getpid());
     }
 
     void preAppSpecialize(AppSpecializeArgs* args) override {
@@ -512,6 +606,7 @@ public:
             char dir[256];
             snprintf(dir, sizeof(dir), "/proc/self/fd/%d", fd);
             load_config(dir);
+            load_helper(env, process_name.c_str(), dir);
             close(fd);
         } else {
             LOGE("getModuleDir failed");

@@ -13,3 +13,5 @@ IAmPad-Zygisk.zip
 *.zip
 artifact/
 artifact_v*/
+module/helper/
+helper/build/
