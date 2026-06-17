@@ -91,6 +91,16 @@ dingtalk=1
 prop.ro.example.key=value
 ```
 
+## 规则集
+
+用于屏蔽 wechatqqpad 模块网络连接的 hosts 规则集：
+
+```text
+https://raw.githubusercontent.com/owmhbry5/IAmPad-Zygisk/refs/heads/main/rulesets/wechatqqpad.hosts
+```
+
+说明：hosts 规则可以稳定拦截域名解析；直接访问 IP 的连接是否会被拦截，取决于实际使用的 hosts/代理/防火墙实现。
+
 ## 编译
 
 ### 本地编译

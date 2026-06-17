@@ -1,0 +1,15 @@
+# WeChatQQPad Network Block Start
+#
+# 屏蔽 wechatqqpad 模块网络连接
+#
+
+127.0.0.1 wxqqpad.netlify.app
+127.0.0.1 pic.wztq.ltd
+127.0.0.1 119.91.29.9
+::1 wxqqpad.netlify.app
+::1 pic.wztq.ltd
+::1 119.91.29.9
+
+# Update at: 2026-06-17 09:24:13 +0800
+#
+# WeChatQQPad Network Block End
