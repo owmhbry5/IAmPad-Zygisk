@@ -1,5 +1,5 @@
 /*
- * IAmPad-Zygisk v10
+ * IAmPad-Zygisk v11
  * Added: system_ext/odm marketname; hardware/board/locale/mod_device/cpu-abilist/serial
  *        matching the property set observed in 平板模块1.1
  * Fixed: hook SystemProperties.native_get (used by many ROMs/WeChat builds)
@@ -13,6 +13,7 @@
 #include <ctime>
 #include <cerrno>
 #include <string>
+#include <utility>
 #include <vector>
 #include <unistd.h>
 #include <fcntl.h>
@@ -73,9 +74,15 @@ static char g_cpu_abilist64[PROP_VALUE_MAX] = "arm64-v8a";
 static char g_serialno[PROP_VALUE_MAX]     = "unknown";
 static char g_boot_serialno[PROP_VALUE_MAX] = "unknown";
 static char g_arch[PROP_VALUE_MAX]         = "arm64";
+static char g_fingerprint[256] = "Xiaomi/pipa/pipa:13/TKQ1.221114.001/V14.0.8.0.TMYCNXM:user/release-keys";
+static char g_build_id[PROP_VALUE_MAX] = "TKQ1.221114.001";
+static char g_android_release[PROP_VALUE_MAX] = "13";
+static char g_sdk_int[PROP_VALUE_MAX] = "33";
+static char g_foldable_screen_support[PROP_VALUE_MAX] = "true";
 
 static std::vector<std::string> g_targets;
 static bool g_targets_configured = false;
+static std::vector<std::pair<std::string, std::string>> g_custom_props;
 
 // ---------------------------------------------------------------------------
 // ALL properties to spoof (from reference module analysis)
@@ -83,7 +90,7 @@ static bool g_targets_configured = false;
 
 struct PropMapping {
     const char* name;
-    char* value;
+    const char* value;
 };
 
 static std::vector<PropMapping> g_prop_map;
@@ -124,6 +131,11 @@ static void build_prop_map() {
     g_prop_map.push_back({"ro.product.product.device", g_device});
 
     // Product name
+    g_prop_map.push_back({"ro.product.product", g_product});
+    g_prop_map.push_back({"ro.product.system.product", g_product});
+    g_prop_map.push_back({"ro.product.system_ext.product", g_product});
+    g_prop_map.push_back({"ro.product.vendor.product", g_product});
+    g_prop_map.push_back({"ro.product.odm.product", g_product});
     g_prop_map.push_back({"ro.product.name", g_product});
     g_prop_map.push_back({"ro.product.system.name", g_product});
     g_prop_map.push_back({"ro.product.system_ext.name", g_product});
@@ -143,12 +155,32 @@ static void build_prop_map() {
     g_prop_map.push_back({"ro.build.characteristics", g_characteristics});
     g_prop_map.push_back({"ro.system.build.characteristics", g_characteristics});
     g_prop_map.push_back({"ro.vendor.build.characteristics", g_characteristics});
+    g_prop_map.push_back({"ro.product.build.characteristics", g_characteristics});
     g_prop_map.push_back({"ro.product.characteristics", g_characteristics});
 
-    // Hardware / board / product / locale / mod_device / cpu abilist / serial
+    // Build identity
+    g_prop_map.push_back({"ro.build.fingerprint", g_fingerprint});
+    g_prop_map.push_back({"ro.system.build.fingerprint", g_fingerprint});
+    g_prop_map.push_back({"ro.vendor.build.fingerprint", g_fingerprint});
+    g_prop_map.push_back({"ro.product.build.fingerprint", g_fingerprint});
+    g_prop_map.push_back({"ro.build.id", g_build_id});
+    g_prop_map.push_back({"ro.system.build.id", g_build_id});
+    g_prop_map.push_back({"ro.vendor.build.id", g_build_id});
+    g_prop_map.push_back({"ro.product.build.id", g_build_id});
+    g_prop_map.push_back({"ro.build.version.release", g_android_release});
+    g_prop_map.push_back({"ro.system.build.version.release", g_android_release});
+    g_prop_map.push_back({"ro.vendor.build.version.release", g_android_release});
+    g_prop_map.push_back({"ro.product.build.version.release", g_android_release});
+    g_prop_map.push_back({"ro.build.version.sdk", g_sdk_int});
+    g_prop_map.push_back({"ro.system.build.version.sdk", g_sdk_int});
+    g_prop_map.push_back({"ro.vendor.build.version.sdk", g_sdk_int});
+    g_prop_map.push_back({"ro.product.build.version.sdk", g_sdk_int});
+
+    // Hardware / board / product / locale / mod_device / cpu abilist / serial / foldable
     g_prop_map.push_back({"ro.hardware", g_hardware});
     g_prop_map.push_back({"ro.build.product", g_build_product});
     g_prop_map.push_back({"ro.product.mod_device", g_mod_device});
+    g_prop_map.push_back({"ro.os_foldable_screen_support", g_foldable_screen_support});
     g_prop_map.push_back({"ro.product.locale", g_locale});
     g_prop_map.push_back({"ro.product.cpu.abilist", g_cpu_abilist});
     g_prop_map.push_back({"ro.product.cpu.abilist32", g_cpu_abilist32});
@@ -159,6 +191,10 @@ static void build_prop_map() {
     g_prop_map.push_back({"ro.serialno", g_serialno});
     g_prop_map.push_back({"ro.boot.serialno", g_boot_serialno});
     g_prop_map.push_back({"ro.arch", g_arch});
+
+    for (const auto& prop : g_custom_props) {
+        g_prop_map.push_back({prop.first.c_str(), prop.second.c_str()});
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +202,10 @@ static void build_prop_map() {
 // ---------------------------------------------------------------------------
 
 static int (*orig_system_property_get)(const char*, char*) = nullptr;
+using NativeGet = jstring (*)(JNIEnv*, jclass, jstring);
+using NativeGetDef = jstring (*)(JNIEnv*, jclass, jstring, jstring);
+static NativeGet orig_native_get = nullptr;
+static NativeGetDef orig_native_get_def = nullptr;
 
 extern "C"
 int iampad_system_property_get(const char* name, char* value) {
@@ -213,78 +253,56 @@ static jstring read_prop_or_default(JNIEnv* env, const char* key, jstring defJ) 
     return defJ ? defJ : env->NewStringUTF("");
 }
 
-static jstring iampad_native_get(JNIEnv* env, jclass /*cls*/, jstring keyJ) {
+static jstring iampad_native_get(JNIEnv* env, jclass cls, jstring keyJ) {
     if (!keyJ) return env->NewStringUTF("");
     const char* key = env->GetStringUTFChars(keyJ, nullptr);
     if (!key) return env->NewStringUTF("");
-    jstring ret = read_prop_or_default(env, key, nullptr);
+    std::string key_string(key);
+    const char* val = lookup_prop_value(key);
     env->ReleaseStringUTFChars(keyJ, key);
-    return ret;
+    if (val) return env->NewStringUTF(val);
+    if (orig_native_get) return orig_native_get(env, cls, keyJ);
+    return read_prop_or_default(env, key_string.c_str(), nullptr);
 }
 
-static jstring iampad_native_get_def(JNIEnv* env, jclass /*cls*/, jstring keyJ, jstring defJ) {
+static jstring iampad_native_get_def(JNIEnv* env, jclass cls, jstring keyJ, jstring defJ) {
     if (!keyJ) return defJ;
     const char* key = env->GetStringUTFChars(keyJ, nullptr);
     if (!key) return defJ;
-    jstring ret = read_prop_or_default(env, key, defJ);
+    std::string key_string(key);
+    const char* val = lookup_prop_value(key);
     env->ReleaseStringUTFChars(keyJ, key);
-    return ret;
+    if (val) return env->NewStringUTF(val);
+    if (orig_native_get_def) return orig_native_get_def(env, cls, keyJ, defJ);
+    return read_prop_or_default(env, key_string.c_str(), defJ);
 }
 
-static void hook_system_properties_jni(JNIEnv* env) {
+static void hook_system_properties_jni(Api* api, JNIEnv* env) {
     jclass cls = env->FindClass("android/os/SystemProperties");
     if (!cls) {
         env->ExceptionClear();
         LOGE("SystemProperties class not found");
         return;
     }
-    static JNINativeMethod methods[] = {
+    orig_native_get = nullptr;
+    orig_native_get_def = nullptr;
+    JNINativeMethod methods[] = {
         {"native_get", "(Ljava/lang/String;)Ljava/lang/String;",
          (void*)iampad_native_get},
         {"native_get", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
          (void*)iampad_native_get_def}
     };
-    if (env->RegisterNatives(cls, methods, 2) != 0) {
-        env->ExceptionClear();
-        LOGE("RegisterNatives(native_get) failed");
-    } else {
-        LOGI("SystemProperties.native_get hooked");
+    api->hookJniNativeMethods(env, "android/os/SystemProperties", methods, 2);
+    if (methods[0].fnPtr && methods[0].fnPtr != (void*)iampad_native_get) {
+        orig_native_get = reinterpret_cast<NativeGet>(methods[0].fnPtr);
     }
+    if (methods[1].fnPtr && methods[1].fnPtr != (void*)iampad_native_get_def) {
+        orig_native_get_def = reinterpret_cast<NativeGetDef>(methods[1].fnPtr);
+    }
+    LOGI("SystemProperties.native_get hooks: one_arg=%s two_arg=%s",
+         orig_native_get ? "OK" : "MISS",
+         orig_native_get_def ? "OK" : "MISS");
     env->DeleteLocalRef(cls);
-}
-
-// ---------------------------------------------------------------------------
-// Find libc.so
-// ---------------------------------------------------------------------------
-
-static bool find_library_inode(const char* needle, dev_t* out_dev, ino_t* out_inode) {
-    FILE* fp = fopen("/proc/self/maps", "r");
-    if (!fp) return false;
-    char line[1024];
-    while (fgets(line, sizeof(line), fp)) {
-        size_t len = strlen(line);
-        if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-        char* p = line;
-        int fields = 0;
-        while (*p && fields < 5) {
-            if (*p == ' ' || *p == '\t') { fields++; while (*p == ' ' || *p == '\t') p++; }
-            else p++;
-        }
-        if (fields < 5 || !*p) continue;
-        char* match = strstr(p, needle);
-        if (!match) continue;
-        char after = match[strlen(needle)];
-        if (after != '\0' && after != ' ' && after != '\t') continue;
-        struct stat st;
-        if (stat(p, &st) == 0) {
-            *out_dev = st.st_dev;
-            *out_inode = st.st_ino;
-            fclose(fp);
-            return true;
-        }
-    }
-    fclose(fp);
-    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,12 +324,67 @@ static void copy_prop(char* dst, const char* src) {
     dst[PROP_VALUE_MAX - 1] = '\0';
 }
 
+static void copy_string(char* dst, size_t dst_size, const char* src) {
+    if (!dst || !src || dst_size == 0) return;
+    strncpy(dst, src, dst_size - 1);
+    dst[dst_size - 1] = '\0';
+}
+
+static void reset_config_defaults() {
+    copy_prop(g_manufacturer, "Xiaomi");
+    copy_prop(g_brand, "Xiaomi");
+    copy_prop(g_model, "23046RP50C");
+    copy_prop(g_device, "pipa");
+    copy_prop(g_product, "pipa");
+    copy_prop(g_marketname, "Xiaomi Pad 6 Pro");
+    copy_prop(g_characteristics, "tablet");
+    copy_prop(g_board, "pipa");
+    copy_prop(g_hardware, "qcom");
+    copy_prop(g_locale, "zh-CN");
+    copy_prop(g_mod_device, "pipa");
+    copy_prop(g_build_product, "pipa");
+    copy_prop(g_cpu_abilist, "arm64-v8a,armeabi-v7a,armeabi");
+    copy_prop(g_cpu_abilist32, "armeabi-v7a,armeabi");
+    copy_prop(g_cpu_abilist64, "arm64-v8a");
+    copy_prop(g_serialno, "unknown");
+    copy_prop(g_boot_serialno, "unknown");
+    copy_prop(g_arch, "arm64");
+    copy_string(g_fingerprint, sizeof(g_fingerprint),
+                "Xiaomi/pipa/pipa:13/TKQ1.221114.001/V14.0.8.0.TMYCNXM:user/release-keys");
+    copy_prop(g_build_id, "TKQ1.221114.001");
+    copy_prop(g_android_release, "13");
+    copy_prop(g_sdk_int, "33");
+    copy_prop(g_foldable_screen_support, "true");
+    g_targets_configured = false;
+    g_targets.clear();
+    g_custom_props.clear();
+}
+
+static bool value_enabled(const char* value) {
+    return value &&
+           strcmp(value, "0") != 0 &&
+           strcmp(value, "false") != 0 &&
+           strcmp(value, "off") != 0 &&
+           strcmp(value, "no") != 0;
+}
+
+static const char* package_for_switch(const char* key) {
+    if (strcmp(key, "wechat") == 0) return "com.tencent.mm";
+    if (strcmp(key, "qq") == 0) return "com.tencent.mobileqq";
+    if (strcmp(key, "tim") == 0) return "com.tencent.tim";
+    if (strcmp(key, "dingtalk") == 0) return "com.alibaba.android.rimet";
+    return nullptr;
+}
+
 static void load_config(const char* module_dir) {
+    reset_config_defaults();
     char path[512];
     snprintf(path, sizeof(path), "%s/config.conf", module_dir);
     FILE* fp = fopen(path, "r");
     if (!fp) { LOGI("no config, using defaults"); return; }
     LOGI("loading config from %s", path);
+    bool app_switch_seen = false;
+    std::vector<std::string> app_switch_targets;
     char line[512];
     while (fgets(line, sizeof(line), fp)) {
         trim(line);
@@ -321,7 +394,12 @@ static void load_config(const char* module_dir) {
         *eq = '\0';
         char* key = line; char* val = eq + 1;
         trim(key); trim(val);
-        if (strcmp(key, "manufacturer") == 0)         copy_prop(g_manufacturer, val);
+        const char* switch_pkg = package_for_switch(key);
+        if (switch_pkg) {
+            app_switch_seen = true;
+            if (value_enabled(val)) app_switch_targets.push_back(switch_pkg);
+        }
+        else if (strcmp(key, "manufacturer") == 0)    copy_prop(g_manufacturer, val);
         else if (strcmp(key, "brand") == 0)            copy_prop(g_brand, val);
         else if (strcmp(key, "model") == 0)            copy_prop(g_model, val);
         else if (strcmp(key, "device") == 0)           copy_prop(g_device, val);
@@ -339,6 +417,14 @@ static void load_config(const char* module_dir) {
         else if (strcmp(key, "serialno") == 0)         copy_prop(g_serialno, val);
         else if (strcmp(key, "boot_serialno") == 0)    copy_prop(g_boot_serialno, val);
         else if (strcmp(key, "arch") == 0)             copy_prop(g_arch, val);
+        else if (strcmp(key, "fingerprint") == 0)      copy_string(g_fingerprint, sizeof(g_fingerprint), val);
+        else if (strcmp(key, "build_id") == 0)         copy_prop(g_build_id, val);
+        else if (strcmp(key, "android_version") == 0)  copy_prop(g_android_release, val);
+        else if (strcmp(key, "sdk_int") == 0)          copy_prop(g_sdk_int, val);
+        else if (strcmp(key, "foldable_screen_support") == 0) copy_prop(g_foldable_screen_support, val);
+        else if (strncmp(key, "prop.", 5) == 0 && key[5] != '\0') {
+            g_custom_props.emplace_back(key + 5, val);
+        }
         else if (strcmp(key, "targets") == 0) {
             g_targets_configured = true;
             g_targets.clear();
@@ -348,6 +434,10 @@ static void load_config(const char* module_dir) {
         }
     }
     fclose(fp);
+    if (app_switch_seen) {
+        g_targets_configured = true;
+        g_targets = app_switch_targets;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -363,6 +453,12 @@ static void set_field(JNIEnv* env, jclass cls, const char* name, const char* val
     env->DeleteLocalRef(jval);
 }
 
+static void set_int_field(JNIEnv* env, jclass cls, const char* name, jint value) {
+    jfieldID fid = env->GetStaticFieldID(cls, name, "I");
+    if (!fid) { env->ExceptionClear(); return; }
+    env->SetStaticIntField(cls, fid, value);
+}
+
 static void spoof_build(JNIEnv* env) {
     jclass cls = env->FindClass("android/os/Build");
     if (!cls) { env->ExceptionClear(); return; }
@@ -373,10 +469,15 @@ static void spoof_build(JNIEnv* env) {
     set_field(env, cls, "PRODUCT", g_product);
     set_field(env, cls, "BOARD", g_board);
     set_field(env, cls, "HARDWARE", g_hardware);
-    char fp_str[256];
-    snprintf(fp_str, sizeof(fp_str), "%s/%s/%s:user/release-keys", g_brand, g_product, g_device);
-    set_field(env, cls, "FINGERPRINT", fp_str);
+    set_field(env, cls, "FINGERPRINT", g_fingerprint);
+    set_field(env, cls, "ID", g_build_id);
     env->DeleteLocalRef(cls);
+
+    jclass version_cls = env->FindClass("android/os/Build$VERSION");
+    if (!version_cls) { env->ExceptionClear(); return; }
+    set_field(env, version_cls, "RELEASE", g_android_release);
+    set_int_field(env, version_cls, "SDK_INT", static_cast<jint>(atoi(g_sdk_int)));
+    env->DeleteLocalRef(version_cls);
 }
 
 // ---------------------------------------------------------------------------
@@ -390,7 +491,7 @@ public:
         this->env = env;
         FILE* fp = fopen(LOG_PATH, "w");
         if (fp) fclose(fp);
-        LOGI("IAmPad v10 onLoad pid=%d", getpid());
+        LOGI("IAmPad v11 onLoad pid=%d", getpid());
     }
 
     void preAppSpecialize(AppSpecializeArgs* args) override {
@@ -424,23 +525,19 @@ public:
         LOGI("TARGET: %s uid=%d", process_name.c_str(), args->uid);
         build_prop_map();
         LOGI("spoofing %zu properties", g_prop_map.size());
-        dev_t dev; ino_t inode;
-        if (find_library_inode("libc.so", &dev, &inode)) {
-            api->pltHookRegister(dev, inode, "__system_property_get",
-                                 (void*)iampad_system_property_get,
-                                 (void**)&orig_system_property_get);
-            bool ok = api->pltHookCommit();
-            LOGI("pltHookCommit = %s", ok ? "OK" : "FAIL");
-            if (ok) {
-                char test[PROP_VALUE_MAX];
-                __system_property_get("ro.build.characteristics", test);
-                LOGI("VERIFY characteristics = %s", test);
-            }
-        } else {
-            LOGE("libc.so not found");
-        }
         spoof_build(env);
-        hook_system_properties_jni(env);
+        hook_system_properties_jni(api, env);
+        orig_system_property_get = nullptr;
+        api->pltHookRegister(0, 0, "__system_property_get",
+                             (void*)iampad_system_property_get,
+                             (void**)&orig_system_property_get);
+        bool ok = api->pltHookCommit();
+        LOGI("pltHookCommit(__system_property_get) = %s", ok ? "OK" : "FAIL");
+        if (ok) {
+            char test[PROP_VALUE_MAX];
+            iampad_system_property_get("ro.os_foldable_screen_support", test);
+            LOGI("VERIFY foldable_screen_support = %s", test);
+        }
         LOGI("done for %s", process_name.c_str());
     }
 
